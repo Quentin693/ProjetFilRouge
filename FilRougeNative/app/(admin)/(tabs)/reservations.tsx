@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  ActionSheetIOS,
+  Alert,
 } from "react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Colors } from "@/constants/colors";
@@ -22,12 +24,15 @@ const FILTER_LABELS: Record<string, string> = {
   ...STATUS_LABELS,
 };
 
+const STATUS_ORDER = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELLED", "REFUNDED"];
+
 export default function AdminReservationsScreen() {
   const [payload, setPayload] = useState<AdminReservationsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState("ALL");
   const [search, setSearch] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
   const searchRef = useRef<TextInput>(null);
 
   const load = useCallback(
@@ -55,20 +60,82 @@ export default function AdminReservationsScreen() {
     return payload.counts[key] ?? 0;
   };
 
+  const handleChangeStatus = (reservation: AdminReservation) => {
+    const options = STATUS_ORDER.filter((s) => s !== reservation.status);
+    const labels = options.map((s) => STATUS_LABELS[s] ?? s);
+
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: `Réservation #${reservation.reference.slice(-8).toUpperCase()}`,
+          message: "Changer le statut vers :",
+          options: [...labels, "Annuler"],
+          cancelButtonIndex: labels.length,
+          destructiveButtonIndex: options.indexOf("CANCELLED") !== -1
+            ? options.indexOf("CANCELLED")
+            : undefined,
+        },
+        async (idx) => {
+          if (idx >= options.length) return;
+          await applyStatus(reservation.id, options[idx]);
+        }
+      );
+    } else {
+      Alert.alert(
+        `Réservation #${reservation.reference.slice(-8).toUpperCase()}`,
+        "Changer le statut vers :",
+        [
+          ...options.map((s) => ({
+            text: STATUS_LABELS[s] ?? s,
+            style: s === "CANCELLED" ? ("destructive" as const) : ("default" as const),
+            onPress: () => applyStatus(reservation.id, s),
+          })),
+          { text: "Annuler", style: "cancel" as const },
+        ]
+      );
+    }
+  };
+
+  const applyStatus = async (id: string, newStatus: string) => {
+    setUpdatingId(id);
+    const res = await adminService.updateReservationStatus(id, newStatus);
+    if (res.data) {
+      setPayload((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          reservations: prev.reservations.map((r) =>
+            r.id === id ? { ...r, status: newStatus } : r
+          ),
+        };
+      });
+    } else {
+      Alert.alert("Erreur", res.error ?? "Impossible de mettre à jour le statut.");
+    }
+    setUpdatingId(null);
+  };
+
   const renderItem = ({ item: r }: { item: AdminReservation }) => (
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <Text style={styles.ref}>#{r.reference.slice(-8).toUpperCase()}</Text>
-        <Text style={[styles.status, { color: STATUS_COLORS[r.status] ?? Colors.textMuted }]}>
+        <Text
+          style={[
+            styles.status,
+            { color: STATUS_COLORS[r.status] ?? Colors.textMuted },
+          ]}
+        >
           {STATUS_LABELS[r.status] ?? r.status}
         </Text>
       </View>
+
       <Text style={styles.client} numberOfLines={1}>
         {r.user.name ?? "Client"} · {r.user.email}
       </Text>
       <Text style={styles.voyage} numberOfLines={1}>
         {r.voyage.title}
       </Text>
+
       <View style={styles.cardBottom}>
         <Text style={styles.meta}>
           {new Date(r.departure.departureDate).toLocaleDateString("fr-FR", {
@@ -79,9 +146,27 @@ export default function AdminReservationsScreen() {
         </Text>
         <Text style={styles.price}>{r.totalPrice.toLocaleString("fr-FR")} €</Text>
       </View>
+
       {r.paymentStatus && (
         <Text style={styles.payment}>Paiement : {r.paymentStatus}</Text>
       )}
+
+      {/* Action : changer statut */}
+      <TouchableOpacity
+        style={[
+          styles.actionBtn,
+          updatingId === r.id && styles.actionBtnDisabled,
+        ]}
+        onPress={() => handleChangeStatus(r)}
+        disabled={updatingId === r.id}
+        activeOpacity={0.7}
+      >
+        {updatingId === r.id ? (
+          <ActivityIndicator size="small" color={Colors.gold} />
+        ) : (
+          <Text style={styles.actionBtnText}>Changer le statut ›</Text>
+        )}
+      </TouchableOpacity>
     </View>
   );
 
@@ -217,9 +302,27 @@ const styles = StyleSheet.create({
   status: { fontSize: 11, fontWeight: "700" },
   client: { fontSize: 14, fontWeight: "600", color: Colors.textPrimary, marginBottom: 3 },
   voyage: { fontSize: 13, color: Colors.textSecondary, marginBottom: 10 },
-  cardBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  cardBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
   meta: { fontSize: 12, color: Colors.textMuted },
   price: { fontSize: 15, fontWeight: "800", color: Colors.gold },
-  payment: { fontSize: 11, color: Colors.textMuted, marginTop: 8 },
+  payment: { fontSize: 11, color: Colors.textMuted, marginBottom: 10 },
+  actionBtn: {
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 10,
+    alignItems: "center",
+  },
+  actionBtnDisabled: { opacity: 0.5 },
+  actionBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.gold,
+  },
   empty: { color: Colors.textMuted, textAlign: "center", marginTop: 40 },
 });

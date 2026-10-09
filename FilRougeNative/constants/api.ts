@@ -33,5 +33,8 @@ export const API_ROUTES = {
   adminVoyages: `${API_BASE_URL}/api/mobile/admin/voyages`,
   adminDestinations: `${API_BASE_URL}/api/mobile/admin/destinations`,
   adminReservations: `${API_BASE_URL}/api/mobile/admin/reservations`,
+  adminReservation: (id: string) =>
+    `${API_BASE_URL}/api/mobile/admin/reservations/${id}`,
   adminUsers: `${API_BASE_URL}/api/mobile/admin/users`,
+  adminUser: (id: string) => `${API_BASE_URL}/api/mobile/admin/users/${id}`,
 } as const;

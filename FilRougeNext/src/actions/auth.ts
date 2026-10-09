@@ -63,7 +63,7 @@ export async function registerAction(
     await signIn("credentials", {
       email,
       password,
-      redirectTo: "/onboarding",
+      redirect: false,
     });
   } catch (error) {
     if (error instanceof AuthError) {
@@ -72,7 +72,7 @@ export async function registerAction(
     throw error;
   }
 
-  return { success: true };
+  redirect("/onboarding");
 }
 
 export async function loginAction(
@@ -90,10 +90,12 @@ export async function loginAction(
   }
 
   try {
+    // redirect: false → évite une réponse RSC invalide ("unexpected response")
+    // après rebuild Docker ; on redirige ensuite avec next/navigation.
     await signIn("credentials", {
       email: parsed.data.email,
       password: parsed.data.password,
-      redirectTo: "/dashboard",
+      redirect: false,
     });
   } catch (error) {
     if (error instanceof AuthError) {
@@ -107,7 +109,7 @@ export async function loginAction(
     throw error;
   }
 
-  return { success: true };
+  redirect("/dashboard");
 }
 
 export async function logoutAction() {

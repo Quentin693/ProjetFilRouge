@@ -238,4 +238,24 @@ export const adminService = {
     if (search) url.searchParams.set("q", search);
     return request<AdminUser[]>(url.toString());
   },
+
+  async updateReservationStatus(
+    id: string,
+    status: string
+  ): Promise<ApiResponse<{ id: string; status: string }>> {
+    return request(API_ROUTES.adminReservation(id), {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  async toggleUserRole(
+    id: string
+  ): Promise<ApiResponse<{ id: string; role: string }>> {
+    return request(API_ROUTES.adminUser(id), { method: "PATCH" });
+  },
+
+  async deleteUser(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    return request(API_ROUTES.adminUser(id), { method: "DELETE" });
+  },
 };

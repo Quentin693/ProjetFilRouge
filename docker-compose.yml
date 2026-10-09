@@ -42,6 +42,7 @@ services:
       # NextAuth — remplace par une vraie clé en prod !
       AUTH_SECRET: ${AUTH_SECRET:-change-moi-en-production-minimum-32chars}
       AUTH_URL: ${AUTH_URL:-http://192.168.6.155:3000}
+      AUTH_TRUST_HOST: "true"
 
       # Unsplash (optionnel)
       NEXT_PUBLIC_UNSPLASH_ACCESS_KEY: ${NEXT_PUBLIC_UNSPLASH_ACCESS_KEY:-}
