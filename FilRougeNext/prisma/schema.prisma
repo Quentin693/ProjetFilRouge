@@ -1,0 +1,289 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==============================
+// AUTH (NextAuth v5)
+// ==============================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ==============================
+// USERS
+// ==============================
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          Role      @default(USER)
+  onboarded     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts     Account[]
+  sessions     Session[]
+  profile      UserProfile?
+  reservations Reservation[]
+}
+
+model UserProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  firstName   String?
+  lastName    String?
+  phone       String?
+  nationality String?
+  bio         String?
+  preferences Json?    // { budget: "luxury" | "premium" | "standard", themes: [...] }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==============================
+// DESTINATIONS
+// ==============================
+
+enum DestinationCategory {
+  BEACH
+  MOUNTAIN
+  CITY
+  SAFARI
+  CRUISE
+  ISLAND
+  CULTURAL
+}
+
+model Destination {
+  id          String              @id @default(cuid())
+  name        String
+  country     String
+  continent   String
+  description String              @db.Text
+  highlights  String[]
+  imageUrl    String
+  gallery     String[]
+  category    DestinationCategory
+  rating      Float               @default(4.5)
+  reviewCount Int                 @default(0)
+  featured    Boolean             @default(false)
+  active      Boolean             @default(true)
+  latitude    Float?              // Pour la géolocalisation mobile
+  longitude   Float?              // Pour la géolocalisation mobile
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  voyages Voyage[]
+}
+
+// ==============================
+// VOYAGES / OFFRES
+// ==============================
+
+enum VoyageCategory {
+  LUXURY
+  PREMIUM
+  ADVENTURE
+  HONEYMOON
+  FAMILY
+  SOLO
+}
+
+model Voyage {
+  id            String         @id @default(cuid())
+  title         String
+  slug          String         @unique
+  description   String         @db.Text
+  destinationId String
+  category      VoyageCategory
+  duration      Int            // en jours
+  maxGuests     Int
+  basePrice     Float          // prix par personne
+  imageUrl      String
+  gallery       String[]
+  includes      String[]       // ["Vol aller-retour", "Hôtel 5 étoiles", ...]
+  excludes      String[]
+  itinerary     Json           // [{day: 1, title: "...", description: "..."}]
+  active        Boolean        @default(true)
+  featured      Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  destination  Destination   @relation(fields: [destinationId], references: [id])
+  departures   Departure[]
+  reservations Reservation[]
+}
+
+model Departure {
+  id          String   @id @default(cuid())
+  voyageId    String
+  departDate  DateTime
+  returnDate  DateTime
+  seatsTotal  Int
+  seatsBooked Int      @default(0)
+  priceAdult  Float
+  priceChild  Float?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  voyage       Voyage        @relation(fields: [voyageId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@index([voyageId])
+  @@index([departDate])
+}
+
+// ==============================
+// RESERVATIONS
+// ==============================
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  REFUNDED
+}
+
+model Reservation {
+  id          String            @id @default(cuid())
+  reference   String            @unique @default(cuid())
+  userId      String
+  voyageId    String
+  departureId String
+  status      ReservationStatus @default(PENDING)
+  adults      Int               @default(1)
+  children    Int               @default(0)
+  totalPrice  Float
+  specialRequests String?
+  passengers  Json?             // [{firstName, lastName, dateOfBirth, passportNumber}]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voyage    Voyage    @relation(fields: [voyageId], references: [id])
+  departure Departure @relation(fields: [departureId], references: [id])
+  payment   Payment?
+  checkIns  CheckIn[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([reference])
+}
+
+// ==============================
+// PAIEMENTS (simulé)
+// ==============================
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  reservationId String        @unique
+  amount        Float
+  currency      String        @default("EUR")
+  status        PaymentStatus @default(PENDING)
+  method        String?       // "card", "transfer"
+  transactionId String?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+}
+
+// ==============================
+// CHECK-IN NFC (Mobile)
+// ==============================
+
+model CheckIn {
+  id            String      @id @default(cuid())
+  reservationId String
+  nfcTagId      String      // ID du tag NFC scanné
+  checkedInAt   DateTime    @default(now())
+  latitude      Float?      // Position GPS au moment du check-in
+  longitude     Float?
+  location      String?     // Adresse lisible (géocodage inverse)
+  createdAt     DateTime    @default(now())
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId])
+  @@index([nfcTagId])
+}
+
+// ==============================
+// REVIEWS
+// ==============================
+
+model Review {
+  id          String   @id @default(cuid())
+  voyageId    String
+  authorName  String
+  authorImage String?
+  rating      Int      // 1-5
+  title       String
+  content     String   @db.Text
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([voyageId])
+}
