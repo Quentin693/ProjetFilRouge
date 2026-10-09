@@ -2,11 +2,12 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { Calendar, MapPin, Users, CreditCard, Clock } from "lucide-react";
+import { Calendar, MapPin, Users, CreditCard, Clock, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
+import { Input } from "@/components/ui/input";
 
 interface Reservation {
   id: string;
@@ -138,18 +139,27 @@ function ReservationCard({ res }: { res: Reservation }) {
 }
 
 export function ReservationsList({ reservations }: { reservations: Reservation[] }) {
-  const upcoming = reservations.filter(
+  const [search, setSearch] = useState("");
+
+  const filtered = reservations.filter((r) =>
+    r.voyage.title.toLowerCase().includes(search.toLowerCase()) ||
+    r.voyage.destination.name.toLowerCase().includes(search.toLowerCase()) ||
+    r.voyage.destination.country.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const upcoming = filtered.filter(
     (r) => r.status === "CONFIRMED" && new Date(r.departure.departDate) > new Date()
   );
-  const past = reservations.filter(
+  const past = filtered.filter(
     (r) =>
       r.status === "COMPLETED" ||
       (r.status === "CONFIRMED" && new Date(r.departure.departDate) <= new Date())
   );
-  const pending = reservations.filter((r) => r.status === "PENDING");
-  const cancelled = reservations.filter(
+  const pending = filtered.filter((r) => r.status === "PENDING");
+  const cancelled = filtered.filter(
     (r) => r.status === "CANCELLED" || r.status === "REFUNDED"
   );
+  
 
   if (reservations.length === 0) {
     return (
@@ -173,23 +183,45 @@ export function ReservationsList({ reservations }: { reservations: Reservation[]
 
   return (
     <Tabs defaultValue="all" className="space-y-6">
-      <TabsList className="bg-[#111111] border border-white/5 rounded-xl p-1 gap-1">
-        <TabsTrigger value="all" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
-          Toutes ({reservations.length})
-        </TabsTrigger>
-        <TabsTrigger value="upcoming" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
-          À venir ({upcoming.length})
-        </TabsTrigger>
-        <TabsTrigger value="pending" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
-          En attente ({pending.length})
-        </TabsTrigger>
-        <TabsTrigger value="past" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
-          Passées ({past.length + cancelled.length})
-        </TabsTrigger>
-      </TabsList>
+      <div className="flex flex-col gap-4">
+        {/* Barre de recherche */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher par nom de voyage, destination…"
+            className="pl-9 bg-[#111111] border-white/10 text-white placeholder:text-white/30 focus-visible:ring-[#C9A84C]/50 focus-visible:border-[#C9A84C]/40"
+          />
+        </div>
+        <TabsList className="bg-[#111111] border border-white/5 rounded-xl p-1 gap-1">
+          <TabsTrigger value="all" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
+            Toutes ({reservations.length})
+          </TabsTrigger>
+          <TabsTrigger value="upcoming" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
+            À venir ({upcoming.length})
+          </TabsTrigger>
+          <TabsTrigger value="pending" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
+            En attente ({pending.length})
+          </TabsTrigger>
+          <TabsTrigger value="past" className="data-active:bg-[#C9A84C] data-active:text-black text-white/50 hover:text-white px-4 py-2 rounded-lg">
+            Passées ({past.length + cancelled.length})
+          </TabsTrigger>
+        </TabsList>
+
+
+
+
+      </div>
+
+
 
       <TabsContent value="all" className="space-y-4">
-        {reservations.map((res) => <ReservationCard key={res.id} res={res} />)}
+        {filtered.length === 0 ? (
+          <p className="text-white/40 text-center py-10">Aucun résultat pour &quot;{search}&quot;</p>
+        ) : (
+          filtered.map((res) => <ReservationCard key={res.id} res={res} />)
+        )}
       </TabsContent>
       <TabsContent value="upcoming" className="space-y-4">
         {upcoming.length === 0 ? (

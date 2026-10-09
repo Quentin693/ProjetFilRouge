@@ -15,6 +15,11 @@ import * as Location from "expo-location";
 import { Colors } from "@/constants/colors";
 import { destinationService } from "@/services/api";
 import type { NearbyDestination } from "@/types";
+import CardMap from "@/components/ui/card-map";
+
+
+const ROME_LAT = 41.9028;
+const ROME_LNG = 12.4964;
 
 const WORLD_RADIUS_KM = 20000;
 const NEARBY_LIST_KM = 2000;
@@ -177,6 +182,14 @@ export default function NearbyScreen() {
                 onPress={() => setSelectedId(d.id)}
               />
             ))}
+            <CardMap />
+            //ajoute moi un marker pour rome
+            <Marker
+              coordinate={{ latitude: ROME_LAT, longitude: ROME_LNG }}
+              title="Rome"
+            >
+              <Image source={require('/Users/quentinho/Projets/EEMI/ProjetFilRouge/FilRougeNative/assets/rome.png')} style={{ width: 20, height: 20 }} />
+            </Marker>
           </MapView>
 
           <TouchableOpacity
