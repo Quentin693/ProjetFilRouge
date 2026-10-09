@@ -1,76 +1,87 @@
 # Voyage Luxe — Projet Fil Rouge EEMI
 
-Plateforme de réservation de voyages de luxe : site web Next.js + application mobile React Native (Expo), avec API REST partagée et dockerisation de l’app Next.js.
+> Soutenance finale M2 · **Next.js /20** · **React Native /20** · **Docker /20**
 
-| Module | Dossier | Rôle |
+Plateforme de réservation de voyages de luxe : site web **Next.js**, application mobile **React Native (Expo)**, API REST partagée, et **dockerisation** de l’app Next.js.
+
+| Module | Dossier / fichier | Note |
 |---|---|---|
-| **Next.js** | `FilRougeNext/` | Front web, back-office admin, API (`/api/*`), Prisma + PostgreSQL |
-| **React Native** | `FilRougeNative/` | App mobile Expo (QR, GPS, auth JWT) |
-| **Docker** | `docker-compose.yml` + `FilRougeNext/Dockerfile` | Conteneurisation production de Next.js + Postgres |
+| Next.js | `FilRougeNext/` | Front web, admin, API, Prisma + PostgreSQL |
+| React Native | `FilRougeNative/` | App Expo (scan QR, géolocalisation, auth JWT) |
+| Docker | `docker-compose.yml` + `FilRougeNext/Dockerfile` | Image production Next.js + Postgres |
 
 ---
 
 ## 1. Description produit
 
-**Voyage Luxe** permet de découvrir des destinations et offres de voyage, de réserver en ligne, de gérer son espace client, et d’accéder à un back-office admin.
+**Voyage Luxe** est une plateforme de voyages haut de gamme.
 
-Côté mobile, l’utilisateur peut :
-- se connecter avec le même compte que le web ;
-- parcourir voyages / destinations ;
-- consulter ses réservations ;
-- **scanner un QR code** (voucher PDF généré par le web) ;
-- voir les **destinations à proximité** via la géolocalisation ;
-- (bonus) effectuer un **check-in NFC** sur build de développement.
+### Web (Next.js)
+- Pages marketing (destinations, voyages)
+- Authentification (inscription / connexion)
+- Onboarding préférences
+- Espace client (dashboard, réservations, settings)
+- Parcours de réservation + voucher PDF
+- Back-office admin (CRUD destinations / voyages / users / stats)
+
+### Mobile (React Native / Expo)
+- Connexion avec le même compte que le web (JWT)
+- Catalogue voyages / destinations
+- Mes réservations
+- **Scan QR code** → check-in billet + voucher PDF
+- **Géolocalisation** → destinations à proximité
 
 ---
 
 ## 2. Architecture
 
 ```
-┌─────────────────────┐         ┌──────────────────────────────┐
-│  FilRougeNative     │  JWT    │  FilRougeNext                │
-│  Expo / RN          │ ──────► │  Next.js 16 (App Router)     │
-│  - QR scan          │  REST   │  - Pages web + Admin         │
-│  - Géolocalisation  │         │  - Route Handlers /api/*     │
-│  - Auth mobile      │         │  - NextAuth (web)            │
-└─────────────────────┘         │  - Prisma ORM                │
-                                └──────────────┬───────────────┘
-                                               │
-                                               ▼
-                                      ┌─────────────────┐
-                                      │  PostgreSQL 17  │
-                                      └─────────────────┘
+┌──────────────────────┐          ┌─────────────────────────────┐
+│  FilRougeNative      │   JWT    │  FilRougeNext               │
+│  Expo SDK 57         │ ───────► │  Next.js 16 (App Router)    │
+│  • Scan QR (caméra)  │   REST   │  • Web + Admin              │
+│  • Géolocalisation   │          │  • /api/mobile/*            │
+│  • Auth SecureStore  │          │  • NextAuth (web)           │
+└──────────────────────┘          │  • Prisma ORM               │
+                                  └──────────────┬──────────────┘
+                                                 │
+                                                 ▼
+                                        ┌─────────────────┐
+                                        │ PostgreSQL 17   │
+                                        └─────────────────┘
 ```
 
-### Stack
+### Stack technique
 
-| Couche | Techno |
+| Couche | Technologie |
 |---|---|
 | Web | Next.js 16, React 19, TypeScript, Tailwind, next-intl |
-| Auth web | NextAuth v5 (Auth.js) |
-| Auth mobile | JWT Bearer (`jose`) + SecureStore |
-| ORM / DB | Prisma 5 + PostgreSQL |
-| Mobile | Expo SDK 57, Expo Router, Zustand, expo-camera, expo-location |
-| Conteneur | Docker multi-stage (Node Alpine), docker compose |
+| Auth web | NextAuth v5 (Auth.js) — cookies |
+| Auth mobile | JWT Bearer (`jose`) + Expo SecureStore |
+| Données | Prisma 5 + PostgreSQL |
+| Mobile | Expo Router, Zustand, expo-camera, expo-location |
+| Docker | Multi-stage (Node 22 Alpine), user non-root, Compose |
 
-### Structure du monorepo
+### Arborescence
 
 ```
 ProjetFilRouge/
-├── README.md                 ← ce fichier
-├── docker-compose.yml
-├── FilRougeNext/             ← Next.js (web + API + admin)
+├── README.md
+├── .env.example              # variables Compose (IP, AUTH_*)
+├── .gitignore
+├── docker-compose.yml        # nextjs + postgres
+├── FilRougeNext/
 │   ├── Dockerfile
 │   ├── .dockerignore
-│   ├── docker-entrypoint.sh  ← migrations Prisma au démarrage
+│   ├── docker-entrypoint.sh  # migrate + seed + start
 │   ├── .env.example
 │   ├── prisma/
 │   └── src/
-└── FilRougeNative/           ← App Expo / React Native
-    ├── .env.local            ← EXPO_PUBLIC_API_URL
-    ├── app/
-    ├── services/
-    └── stores/
+└── FilRougeNative/
+    ├── app/                  # Expo Router
+    ├── services/api.ts
+    ├── stores/auth.ts
+    └── constants/api.ts
 ```
 
 ---
@@ -78,64 +89,95 @@ ProjetFilRouge/
 ## 3. Installation
 
 ### Prérequis
-
 - Node.js **22+**
 - npm
-- PostgreSQL (local **ou** via Docker)
-- Docker Desktop (pour la partie Docker)
-- Expo Go sur téléphone réel (ou simulateur)
-- Compte Unsplash (optionnel, images)
+- Docker Desktop
+- Expo Go (téléphone réel)
+- (optionnel) compte Unsplash
 
-### Cloner & installer
+### Cloner le repo
 
 ```bash
-git clone <url-du-repo>
+git clone https://github.com/Quentin693/ProjetFilRouge.git
 cd ProjetFilRouge
+```
 
-# Backend / web
+### Option A — Docker (recommandé pour la démo)
+
+```bash
+# 1. Récupérer l'IP Wi‑Fi du Mac
+ipconfig getifaddr en0
+
+# 2. Configurer l'environnement
+cp .env.example .env
+# Éditer .env → remplacer 192.168.X.X par votre IP
+
+# 3. Lancer
+docker compose up --build
+```
+
+→ App : [http://localhost:3000](http://localhost:3000)  
+→ Seed automatique (comptes + destinations + voyages) au démarrage.
+
+### Option B — Développement local (sans Docker)
+
+```bash
+# --- Next.js ---
 cd FilRougeNext
-cp .env.example .env          # puis remplir les valeurs
+cp .env.example .env
+# Renseigner DATABASE_URL, AUTH_SECRET, AUTH_URL, NEXT_PUBLIC_APP_URL
 npm install
 npx prisma migrate deploy
-npm run db:seed               # comptes de démo
+npm run db:seed
+npm run dev
 
-# Mobile
-cd ../FilRougeNative
+# --- Mobile (autre terminal) ---
+cd FilRougeNative
+# Créer .env.local avec :
+# EXPO_PUBLIC_API_URL=http://<IP-du-Mac>:3000
 npm install
-# Éditer .env.local → EXPO_PUBLIC_API_URL=http://<IP-du-Mac>:3000
+npm start
 ```
 
 ---
 
 ## 4. Variables d’environnement
 
+### Racine (`.env` — utilisé par Docker Compose)
+
+| Variable | Rôle |
+|---|---|
+| `NEXT_PUBLIC_APP_URL` | URL réseau du Mac (`http://IP:3000`) — **obligatoire pour le QR** |
+| `AUTH_URL` | URL NextAuth (même valeur que ci-dessus en démo) |
+| `AUTH_SECRET` | Secret Auth.js (≥ 32 caractères) |
+| `NEXT_PUBLIC_UNSPLASH_ACCESS_KEY` | Images Unsplash (optionnel) |
+| `UNSPLASH_SECRET_KEY` | Secret Unsplash (optionnel) |
+
+> `NEXT_PUBLIC_APP_URL` est passé en **build-arg** Docker (injecté dans le bundle client).  
+> Si l’IP change : mettre à jour `.env` puis `docker compose up --build -d`.
+
 ### FilRougeNext (`.env`)
 
-| Variable | Description |
+| Variable | Exemple |
 |---|---|
-| `DATABASE_URL` | URL PostgreSQL (`postgresql://user:pass@host:port/db`) |
-| `AUTH_SECRET` | Secret NextAuth (≥ 32 caractères) |
-| `AUTH_URL` | URL publique de l’app (`http://localhost:3000`) |
-| `NEXT_PUBLIC_UNSPLASH_ACCESS_KEY` | Clé publique Unsplash |
-| `UNSPLASH_SECRET_KEY` | Clé secrète Unsplash |
-| `NEXT_PUBLIC_APP_URL` | URL réseau (QR codes scannables depuis le téléphone) |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5434/voyage_luxe` |
+| `AUTH_SECRET` | chaîne secrète ≥ 32 chars |
+| `AUTH_URL` | `http://localhost:3000` |
+| `NEXT_PUBLIC_APP_URL` | `http://192.168.X.X:3000` |
+| Clés Unsplash | voir `.env.example` |
 
-> Voir `FilRougeNext/.env.example`. **Ne jamais committer** un fichier `.env` avec de vrais secrets.
+Fichier modèle : `FilRougeNext/.env.example`  
+**Ne jamais committer** de vrais secrets (`.env` est dans `.gitignore`).
 
 ### FilRougeNative (`.env.local`)
 
-| Variable | Description |
+| Variable | Exemple |
 |---|---|
-| `EXPO_PUBLIC_API_URL` | URL du backend Next.js |
+| `EXPO_PUBLIC_API_URL` | `http://192.168.X.X:3000` |
 
-Exemples :
-- iPhone physique → `http://192.168.x.x:3000` (IP du Mac)
-- Émulateur Android → `http://10.0.2.2:3000`
+- iPhone physique → IP du Mac  
+- Émulateur Android → `http://10.0.2.2:3000`  
 - Simulateur iOS → `http://localhost:3000`
-
-### Docker (racine, optionnel)
-
-Les variables du service `nextjs` peuvent être surchargées via un `.env` à la racine du monorepo (`AUTH_SECRET`, `AUTH_URL`, clés Unsplash, `NEXT_PUBLIC_APP_URL`).
 
 ---
 
@@ -144,25 +186,22 @@ Les variables du service `nextjs` peuvent être surchargées via un `.env` à la
 ```bash
 cd FilRougeNext
 
-npm run dev          # serveur de développement → http://localhost:3000
+npm run dev          # http://localhost:3000
 npm run build        # build production
-npm run start        # démarrer le build production
-npm run lint         # ESLint
+npm run start        # servir le build
+npm run lint
 
 npm run db:generate  # prisma generate
 npm run db:migrate   # prisma migrate dev
-npm run db:push      # prisma db push
-npm run db:seed      # seed (comptes + données de démo)
+npm run db:seed      # comptes + données de démo
 npm run db:studio    # Prisma Studio
 ```
 
-### Parcours web à tester
-
-1. Pages marketing / destinations / voyages  
+### Parcours web à démontrer
+1. Landing / destinations / voyages  
 2. Inscription → onboarding → dashboard  
-3. Réservation d’un voyage  
-4. Espace réservations + voucher PDF / QR  
-5. Back-office admin (CRUD destinations, voyages, users, stats)
+3. Réserver un voyage → confirmation + QR voucher  
+4. Admin (`admin@voyage-luxe.fr`) : CRUD + stats  
 
 ---
 
@@ -171,144 +210,237 @@ npm run db:studio    # Prisma Studio
 ```bash
 cd FilRougeNative
 
-npm start            # Expo DevTools
+npm start            # Expo DevTools + QR Expo Go
 npm run ios          # simulateur iOS
 npm run android      # émulateur Android
-npm run web          # mode web Expo
 ```
 
-Sur téléphone réel : ouvrir **Expo Go** et scanner le QR affiché dans le terminal.
+### Tester sur téléphone réel (obligatoire)
 
-> Le backend Next.js doit être lancé et joignable via `EXPO_PUBLIC_API_URL`.
+> Cas général de la note React Native : **téléphone réel + caméra**.  
+> Expo Go est suffisant pour QR + géolocalisation (modules compatibles).
+
+| Prérequis | Détail |
+|---|---|
+| Téléphone physique | iPhone ou Android (pas seulement le simulateur pour la démo) |
+| Même Wi‑Fi | Mac + téléphone sur le même réseau |
+| Backend joignable | `EXPO_PUBLIC_API_URL=http://<IP-Mac>:3000` dans `.env.local` |
+| Expo Go | Installé depuis l’App Store / Play Store |
+
+```bash
+# 1. Backend (Docker ou npm run dev) démarré
+# 2. IP du Mac
+ipconfig getifaddr en0
+
+# 3. FilRougeNative/.env.local
+EXPO_PUBLIC_API_URL=http://192.168.X.X:3000
+
+# 4. Lancer Expo
+cd FilRougeNative
+npm start
+
+# 5. Sur le téléphone : ouvrir Expo Go → scanner le QR du terminal
+```
+
+#### Checklist téléphone réel
+
+- [ ] **Scan QR** testé avec la **caméra** du téléphone (écran Check-in billet)
+- [ ] **Géolocalisation** testée sur le téléphone (onglet À proximité + permission)
+- [ ] Permissions caméra / localisation acceptées (et cas refus expliqué)
+- [ ] Données réelles via l’API (login, réservation, check-in persisté)
+- [ ] Expo Go utilisé pour QR + GPS (compatible)
+
+### Routes API mobile utilisées
+
+| Méthode | Route | Rôle |
+|---|---|---|
+| POST | `/api/mobile/auth/login` | Connexion → JWT |
+| GET | `/api/mobile/auth/me` | Profil |
+| GET | `/api/mobile/voyages` | Liste voyages |
+| GET | `/api/mobile/destinations/nearby?lat=&lng=` | Proximité GPS |
+| GET/POST | `/api/mobile/reservations` | Réservations |
+| POST | `/api/mobile/voucher/scan` | Check-in billet QR |
+
+Header : `Authorization: Bearer <jwt>`
+
+> **Expo Go suffit** pour ce projet : scan QR (`expo-camera`) + géolocalisation (`expo-location`).  
+> Pas de module natif hors Expo Go → **pas de Development Build requise**.
 
 ---
 
 ## 7. Commandes Docker
 
-Dockerise **l’application Next.js** (exigence commune) + PostgreSQL.
+### Lancement
 
 ```bash
 # Depuis la racine ProjetFilRouge/
-docker compose up --build        # build + lancement (foreground)
-docker compose up --build -d     # en arrière-plan
-docker compose logs -f nextjs    # logs Next.js
-docker compose down              # arrêt
-docker compose down -v           # arrêt + suppression du volume Postgres
+cp .env.example .env          # puis adapter l'IP
+docker compose up --build     # foreground
+docker compose up --build -d  # arrière-plan
+
+docker compose logs -f nextjs
+docker compose down
+docker compose down -v        # + reset volume Postgres
 ```
 
-| Service | URL / port |
+| Service | Accès |
 |---|---|
-| Next.js | [http://localhost:3000](http://localhost:3000) |
-| Postgres (hôte) | `localhost:5433` → conteneur `:5432` |
+| Next.js | [http://localhost:3000](http://localhost:3000) ou `http://<IP>:3000` |
+| Postgres (hôte) | `localhost:5434` → conteneur `:5432` |
 
-> Le port hôte **5433** évite le conflit avec un Postgres déjà présent sur `5432`.  
-> À l’intérieur du réseau Docker, Next.js parle à `postgres:5432`.
+### Contenu livré Docker
 
-### Image seule (sans compose)
+| Fichier | Rôle |
+|---|---|
+| `FilRougeNext/Dockerfile` | Multi-stage production (`standalone`) |
+| `FilRougeNext/.dockerignore` | Exclut `node_modules`, `.next`, `.env`… |
+| `FilRougeNext/docker-entrypoint.sh` | `migrate deploy` → `seed` → `node server.js` |
+| `docker-compose.yml` | Services `nextjs` + `postgres` |
+
+### Choix techniques Docker
+- Image `node:22-alpine` + OpenSSL 3 (Prisma `linux-musl-openssl-3.0.x`)
+- User **non-root** (`nextjs`)
+- Layers cachés : `package*.json` copié avant le code source
+- Secrets **non** copiés dans l’image (`.dockerignore` + env runtime)
+- Port hôte Postgres **5434** (évite les conflits avec d’autres Postgres locaux)
+
+### `docker run` (sans Compose)
 
 ```bash
 cd FilRougeNext
-docker build -t voyage-luxe-next .
+docker build \
+  --build-arg NEXT_PUBLIC_APP_URL=http://192.168.X.X:3000 \
+  -t voyage-luxe-next .
+
 docker run --rm -p 3000:3000 \
-  -e DATABASE_URL="postgresql://..." \
+  -e DATABASE_URL="postgresql://postgres:postgres@host.docker.internal:5434/voyage_luxe" \
   -e AUTH_SECRET="..." \
-  -e AUTH_URL="http://localhost:3000" \
+  -e AUTH_URL="http://192.168.X.X:3000" \
+  -e NEXT_PUBLIC_APP_URL="http://192.168.X.X:3000" \
   voyage-luxe-next
 ```
 
-### Points Docker notables
-
-- Build **multi-stage** (deps → builder → runner)
-- Output Next.js `standalone`
-- Utilisateur **non-root** (`nextjs`)
-- Migrations Prisma au démarrage (`docker-entrypoint.sh`)
-- `.dockerignore` exclut `node_modules`, `.next`, `.env`, etc.
-- `binaryTargets` Prisma : `linux-musl-openssl-3.0.x` (Alpine)
-
 ---
 
-## 8. Test scan QR code
+## 8. Test scan QR
 
-### Flux métier
+### Flux métier attendu (BILLET / check-in)
 
-1. Se connecter sur le **web**, réserver un voyage  
-2. Ouvrir la réservation → un **QR code** pointe vers `/api/reservations/[id]/pdf`  
-3. Sur le **téléphone**, ouvrir l’app → **Scanner QR**  
-4. Autoriser la **caméra**  
-5. Scanner le QR affiché sur l’écran web (ou imprimé)  
-6. L’app valide que l’URL correspond à un voucher Voyage Luxe  
-7. Ouverture / téléchargement du **PDF voucher**
+```
+1. QR physique (écran web / impression)
+2. Caméra du téléphone (app Expo)
+3. Scan
+4. Payload = reservationId + token
+5. Validation app (format URL Voyage Luxe)
+6. Backend POST /api/mobile/voucher/scan
+7. Action métier = check-in billet (persisté en DB)
+8. Feedback utilisateur dans l’app (+ PDF en option)
+```
 
-### Scénario de démo
+> Le QR **ne se contente pas d’ouvrir une URL** : l’app extrait l’ID, appelle le backend, enregistre un check-in, puis affiche le résultat.
 
-| Étape | Action |
+### Scénario de démo (étape par étape)
+
+| # | Action |
 |---|---|
-| 1 | Web : login `test@voyage-luxe.fr` |
-| 2 | Réserver un voyage (ou ouvrir une réservation existante) |
-| 3 | Afficher le QR du voucher |
-| 4 | Mobile : onglet Accueil / Réservations → Scanner QR |
-| 5 | Pointer la caméra vers le QR |
-| 6 | Confirmer l’ouverture du PDF |
+| 1 | Lancer Docker avec `NEXT_PUBLIC_APP_URL=http://<IP-Mac>:3000` |
+| 2 | Web : login `test@voyage-luxe.fr` / `User@123456` |
+| 3 | Réserver un voyage → **payer / confirmer** (statut `CONFIRMED`) |
+| 4 | Afficher le QR code sur la confirmation |
+| 5 | App mobile (même compte) → **Scanner QR** → autoriser caméra (+ GPS optionnel) |
+| 6 | L’app valide → appelle l’API → **check-in réussi** à l’écran |
+| 7 | Boutons : voir la réservation / télécharger le PDF / re-scanner |
 
-> Le QR n’ouvre pas une URL générique : l’app **valide** le chemin `/api/reservations/.../pdf` avant d’agir.
+### Points de contrôle
+- Téléphone et Mac sur le **même Wi‑Fi**
+- Le QR ne doit **pas** contenir `localhost`
+- Réservation **CONFIRMÉE** (sinon le backend refuse le check-in)
+- Double scan bloqué (`409` — déjà enregistré)
+- PDF disponible en action secondaire, pas comme seul résultat
 
 ---
 
 ## 9. Test géolocalisation
 
-1. Lancer l’app sur **téléphone réel**  
-2. Onglet **À proximité** (`nearby`)  
-3. Autoriser la permission de localisation  
-4. L’app envoie `lat` / `lng` à `GET /api/mobile/destinations/nearby`  
-5. Le backend calcule la distance (Haversine) et renvoie les destinations dans le rayon  
+> À tester sur **téléphone réel** (pas uniquement simulateur), avec la permission système.
 
-Vérifier les états : loading, empty (aucune destination), liste avec distances, erreur si permission refusée.
+| # | Action |
+|---|---|
+| 1 | App **Expo Go** sur téléphone réel (même Wi‑Fi que le Mac) |
+| 2 | Se connecter avec un compte démo |
+| 3 | Onglet **À proximité** |
+| 4 | Autoriser la permission de localisation quand iOS/Android le demande |
+| 5 | L’app envoie `lat` / `lng` à `GET /api/mobile/destinations/nearby` |
+| 6 | Le backend calcule la distance (formule Haversine) |
+| 7 | Affichage de la liste + distances en km |
+
+États à montrer : **loading** / **empty** / **success** / **erreur** (permission refusée).
+
+Astuce démo : refuser une fois la permission → montrer le message d’erreur → réautoriser dans Réglages → retester.
 
 ---
 
-## 10. Comptes de démonstration
+## 10. Comptes de démo
+
+Créés automatiquement par le seed (`docker-entrypoint` ou `npm run db:seed`) :
 
 | Rôle | Email | Mot de passe |
 |---|---|---|
 | 👑 Admin | `admin@voyage-luxe.fr` | `Admin@123456` |
 | 🧳 User | `test@voyage-luxe.fr` | `User@123456` |
 
-Créés via `npm run db:seed` dans `FilRougeNext`.
-
 ---
 
-## 11. Scan Docker Scout
+## 11. Scan Docker
 
 Après le build de l’image :
 
 ```bash
-# Build
 docker compose build nextjs
 
-# Scan
+# Scan des vulnérabilités
 docker scout cves projetfilrouge-nextjs
-# ou
+# Vue rapide
 docker scout quickview projetfilrouge-nextjs
 ```
 
-À documenter pour la soutenance :
-- résumé des vulnérabilités (critique / high / medium) ;
-- ce qui a été corrigé ou accepté (ex. base Alpine à jour, user non-root, pas de `.env` dans l’image) ;
-- limites restantes (dépendances transitives, image de base Node).
+### Résultat réel (`docker scout quickview projetfilrouge-nextjs`)
+
+| | Critical | High | Medium | Low |
+|---|---|---|---|---|
+| Image actuelle (`node:22-alpine`) | 1 | 14 | 13 | 2 |
+| Base image seule | 0 | 11 | 9 | 1 |
+| Base plus récente (`node:26-alpine`) | 0 | 5 | 7 | 1 |
+
+- Score santé Scout : **D (44 %)** — politiques : user **non-root OK**, pas de CVE « high-profile »
+- Échecs : 1 critique + 13 high **corrigeables**, base image un peu ancienne, licences copyleft, attestation supply-chain manquante
+- Choix assumé : rester sur Node 22 (version du projet) ; la majorité des CVE vient de l’image de base, pas du code Voyage Luxe
+- Atténuations déjà en place : user non-root, `.dockerignore` (pas de `.env` / `node_modules`), layers `package*.json` avant le code
+
+Commandes à relancer en soutenance :
+
+```bash
+docker scout quickview projetfilrouge-nextjs
+docker scout cves projetfilrouge-nextjs
+```
 
 ---
 
 ## 12. Usage de l’IA
 
 L’IA a été utilisée pour :
-- générer / itérer le **Dockerfile** multi-stage et le `docker-compose.yml` ;
-- diagnostiquer des erreurs de build (OpenSSL Alpine / Prisma, port 5432, symlink CLI Prisma) ;
-- structurer la documentation.
+- générer et itérer le **Dockerfile** multi-stage et le `docker-compose.yml` ;
+- diagnostiquer les erreurs (port Postgres, OpenSSL Prisma/Alpine, seed manquant, QR en `localhost`) ;
+- structurer ce **README**.
 
-Responsabilité humaine :
-- chaque commande a été **testée** localement (`docker compose up --build`) ;
-- les secrets ne sont **pas** copiés dans l’image (`.dockerignore`) ;
-- les choix techniques (port 5433, binaryTargets Prisma, entrypoint migrations) sont **compris et assumés**.
+Responsabilité humaine (non déléguable) :
+1. **Vérifier** chaque suggestion  
+2. **Tester** (`docker compose up --build`, login, QR, GPS)  
+3. **Comprendre** image / conteneur / ports / env / layers  
+4. **Documenter** les choix et limites  
+5. **Refuser** ce qui est faux ou dangereux (ex. copier `.env` dans l’image)
+
+Pendant le **live coding** : pas d’agent IA (docs officielles, IDE, terminal, DevTools uniquement).
 
 ---
 
@@ -316,45 +448,38 @@ Responsabilité humaine :
 
 | Limite | Détail |
 |---|---|
-| Paiement | Simulé : réservation mobile confirmée automatiquement |
-| Unsplash | Sans clés API, certaines images peuvent manquer |
-| Expo Go | NFC **non disponible** dans Expo Go → Development Build requise |
-| Réseau mobile | `localhost` ne marche pas sur téléphone physique → IP locale obligatoire |
-| Port Postgres Docker | Mappé sur **5433** côté hôte (conflit fréquent avec un Postgres local) |
-| Build Next.js | Les pages qui appellent Prisma pendant le build loggent une erreur DB placeholder (sans bloquer : routes dynamiques) |
-
-### Bonus NFC (si présenté)
-
-- Check-in via tag NFC + GPS optionnel  
-- Route `POST /api/mobile/check-in`  
-- Nécessite une **Development Build** (EAS) et un device NFC  
-
-```bash
-npm install -g eas-cli
-eas build --profile development --platform ios     # ou android
-```
+| Paiement | Simulé — réservation mobile auto-confirmée |
+| Unsplash | Sans clés API, certaines images manquent |
+| IP Wi‑Fi | Change souvent → rebuild Docker si `NEXT_PUBLIC_APP_URL` change |
+| Expo Go | Suffisant (QR + GPS) — pas de NFC dans ce projet |
+| Réseau mobile | `localhost` inaccessible depuis le téléphone → IP locale obligatoire |
+| Port Postgres | Mappé sur **5434** côté hôte (conflits fréquents sur 5432) |
+| Build Next.js | Logs Prisma « placeholder » au build (routes dynamiques, non bloquant) |
 
 ---
 
-## Lancement rapide recommandé (soutenance)
+## Lancement rapide (soutenance)
 
 ```bash
-# Terminal 1 — stack Docker (web + DB)
+# Terminal 1 — Web + DB
 cd ProjetFilRouge
+cp .env.example .env   # IP à jour
 docker compose up --build
 
-# Terminal 2 — mobile (contre le Next.js sur :3000)
+# Terminal 2 — Mobile
 cd FilRougeNative
-# Vérifier EXPO_PUBLIC_API_URL = IP du Mac
+# EXPO_PUBLIC_API_URL=http://<IP>:3000
 npm start
 ```
 
-Puis ouvrir :
-- Web → [http://localhost:3000](http://localhost:3000)  
-- Mobile → Expo Go sur téléphone réel  
+| Cible | URL |
+|---|---|
+| Web | http://localhost:3000 |
+| Web (téléphone / QR) | http://\<IP-Mac\>:3000 |
+| Mobile | Expo Go sur téléphone réel |
 
 ---
 
 ## Licence
 
-Projet scolaire EEMI — M2 · Soutenance finale (Next.js / React Native / Docker).
+Projet scolaire EEMI — M2 · Soutenance finale 2026.

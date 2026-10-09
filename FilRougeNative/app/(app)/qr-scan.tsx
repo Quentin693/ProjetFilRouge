@@ -6,19 +6,64 @@ import {
   Linking,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { useState, useEffect, useRef } from "react";
 import { router } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as Location from "expo-location";
+import { reservationService } from "@/services/api";
+import { API_BASE_URL } from "@/constants/api";
+import type { Reservation } from "@/types";
 
 const { width } = Dimensions.get("window");
 const SCAN_SIZE = width * 0.7;
 
+type ScanResult = {
+  reservationId: string;
+  token: string;
+  rawUrl: string;
+};
+
+type VoucherResult = {
+  alreadyCheckedIn?: boolean;
+  checkIn?: { id: string; checkedInAt: string; location: string | null };
+  reservation?: Reservation & {
+    reference?: string;
+    voyage: Reservation["voyage"] & {
+      destination?: { name: string; country: string };
+    };
+  };
+  pdfUrl?: string;
+  message?: string;
+};
+
+function parseVoucherQr(data: string): ScanResult | null {
+  try {
+    const url = new URL(data);
+    const match = url.pathname.match(
+      /\/api\/reservations\/([^/]+)\/pdf\/?$/
+    );
+    if (!match) return null;
+
+    const reservationId = match[1];
+    const token = url.searchParams.get("token");
+    if (!token) return null;
+
+    return { reservationId, token, rawUrl: data };
+  } catch {
+    return null;
+  }
+}
+
 export default function QrScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [scannedUrl, setScannedUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<VoucherResult | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const scanCooldown = useRef(false);
 
   useEffect(() => {
@@ -27,53 +72,84 @@ export default function QrScanScreen() {
     }
   }, []);
 
-  const handleBarCodeScanned = ({ data }: { data: string }) => {
-    if (scanCooldown.current || scanned) return;
-    scanCooldown.current = true;
-
-    setScanned(true);
-    setScannedUrl(data);
-  };
-
-  const handleOpenPdf = async () => {
-    if (!scannedUrl) return;
-
-    // Vérifier que l'URL est valide et pointe vers notre API
-    try {
-      const url = new URL(scannedUrl);
-      const isPdfRoute = url.pathname.includes("/api/reservations/") && url.pathname.includes("/pdf");
-
-      if (!isPdfRoute) {
-        Alert.alert(
-          "QR Code invalide",
-          "Ce QR code ne correspond pas à un voucher Voyage Luxe.",
-          [{ text: "OK", onPress: resetScan }]
-        );
-        return;
-      }
-
-      const canOpen = await Linking.canOpenURL(scannedUrl);
-      if (canOpen) {
-        await Linking.openURL(scannedUrl);
-      } else {
-        Alert.alert("Erreur", "Impossible d'ouvrir ce lien.", [{ text: "OK", onPress: resetScan }]);
-      }
-    } catch {
-      // URL invalide → essayons quand même de l'ouvrir
-      try {
-        await Linking.openURL(scannedUrl);
-      } catch {
-        Alert.alert("Erreur", "Lien invalide.", [{ text: "OK", onPress: resetScan }]);
-      }
-    }
-  };
-
   const resetScan = () => {
     setScanned(false);
-    setScannedUrl(null);
+    setLoading(false);
+    setError(null);
+    setResult(null);
+    setPdfUrl(null);
     setTimeout(() => {
       scanCooldown.current = false;
     }, 1000);
+  };
+
+  const processScan = async (data: string) => {
+    const parsed = parseVoucherQr(data);
+    if (!parsed) {
+      setError("QR invalide : ce n'est pas un billet Voyage Luxe.");
+      setScanned(true);
+      return;
+    }
+
+    setScanned(true);
+    setLoading(true);
+    setError(null);
+
+    // GPS optionnel (feedback métier enrichi)
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === "granted") {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        latitude = loc.coords.latitude;
+        longitude = loc.coords.longitude;
+      }
+    } catch {
+      // GPS non bloquant
+    }
+
+    const res = await reservationService.scanVoucher({
+      reservationId: parsed.reservationId,
+      token: parsed.token,
+      latitude,
+      longitude,
+    });
+
+    setLoading(false);
+
+    if (res.error && !res.data) {
+      setError(res.error);
+      return;
+    }
+
+    const dataResult = res.data!;
+    setResult(dataResult);
+    const absolutePdf = dataResult.pdfUrl
+      ? dataResult.pdfUrl.startsWith("http")
+        ? dataResult.pdfUrl
+        : `${API_BASE_URL}${dataResult.pdfUrl}`
+      : parsed.rawUrl;
+    setPdfUrl(absolutePdf);
+  };
+
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
+    if (scanCooldown.current || scanned || loading) return;
+    scanCooldown.current = true;
+    processScan(data);
+  };
+
+  const handleOpenPdf = async () => {
+    if (!pdfUrl) return;
+    try {
+      const canOpen = await Linking.canOpenURL(pdfUrl);
+      if (canOpen) await Linking.openURL(pdfUrl);
+      else Alert.alert("Erreur", "Impossible d'ouvrir le PDF.");
+    } catch {
+      Alert.alert("Erreur", "Impossible d'ouvrir le PDF.");
+    }
   };
 
   if (!permission) {
@@ -94,7 +170,7 @@ export default function QrScanScreen() {
           <Text style={styles.permissionIcon}>📷</Text>
           <Text style={styles.permissionTitle}>Accès caméra requis</Text>
           <Text style={styles.permissionText}>
-            L'accès à la caméra est nécessaire pour scanner le QR code de votre voucher.
+            L&apos;accès à la caméra est nécessaire pour scanner votre billet QR.
           </Text>
           <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
             <Text style={styles.primaryButtonText}>Autoriser la caméra</Text>
@@ -106,22 +182,20 @@ export default function QrScanScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backText}>✕</Text>
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>Scanner le voucher</Text>
+          <Text style={styles.title}>Check-in billet</Text>
           <Text style={styles.subtitle}>
-            Pointez votre caméra vers le QR code affiché sur l'application web
+            Scannez le QR de votre voucher — validation et check-in via le serveur
           </Text>
         </View>
       </View>
 
       {!scanned ? (
         <>
-          {/* Caméra avec overlay */}
           <View style={styles.cameraContainer}>
             <CameraView
               style={StyleSheet.absoluteFill}
@@ -130,14 +204,15 @@ export default function QrScanScreen() {
               onBarcodeScanned={handleBarCodeScanned}
             />
 
-            {/* Overlay sombre autour du cadre */}
             <View style={styles.overlay}>
-              {/* Haut */}
-              <View style={[styles.overlaySection, { height: (styles.cameraContainer.height - SCAN_SIZE) / 2 }]} />
-              {/* Milieu */}
+              <View
+                style={[
+                  styles.overlaySection,
+                  { height: (CAMERA_HEIGHT - SCAN_SIZE) / 2 },
+                ]}
+              />
               <View style={styles.overlayMiddle}>
                 <View style={[styles.overlaySection, { width: (width - SCAN_SIZE) / 2 }]} />
-                {/* Cadre de scan */}
                 <View style={styles.scanFrame}>
                   <View style={[styles.corner, styles.cornerTL]} />
                   <View style={[styles.corner, styles.cornerTR]} />
@@ -146,47 +221,106 @@ export default function QrScanScreen() {
                 </View>
                 <View style={[styles.overlaySection, { width: (width - SCAN_SIZE) / 2 }]} />
               </View>
-              {/* Bas */}
-              <View style={[styles.overlaySection, { height: (styles.cameraContainer.height - SCAN_SIZE) / 2 }]} />
+              <View
+                style={[
+                  styles.overlaySection,
+                  { height: (CAMERA_HEIGHT - SCAN_SIZE) / 2 },
+                ]}
+              />
             </View>
 
-            {/* Instruction */}
             <View style={styles.scanInstruction}>
               <Text style={styles.scanInstructionText}>
-                🎫 Alignez le QR code dans le cadre
+                🎫 Alignez le QR du billet dans le cadre
               </Text>
             </View>
           </View>
 
-          {/* Hint */}
           <View style={styles.hint}>
             <Text style={styles.hintText}>
-              Le QR code se trouve sur la page de confirmation ou de détail de votre réservation sur le site web.
+              Flux métier : scan → extraction ID/token → validation app → API
+              backend → check-in → confirmation dans l&apos;app.
             </Text>
           </View>
         </>
+      ) : loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={Colors.gold} />
+          <Text style={[styles.successSubtitle, { marginTop: 16 }]}>
+            Validation du billet auprès du serveur…
+          </Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centered}>
+          <View style={[styles.successCircle, styles.errorCircle]}>
+            <Text style={styles.successIcon}>✕</Text>
+          </View>
+          <Text style={styles.successTitle}>Échec</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.primaryButton} onPress={resetScan}>
+            <Text style={styles.primaryButtonText}>Scanner à nouveau</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
-        /* Résultat du scan */
         <View style={styles.centered}>
           <View style={styles.successCircle}>
-            <Text style={styles.successIcon}>✅</Text>
+            <Text style={styles.successIcon}>
+              {result?.alreadyCheckedIn ? "ℹ️" : "✅"}
+            </Text>
           </View>
-          <Text style={styles.successTitle}>QR Code scanné !</Text>
-          <Text style={styles.successSubtitle}>Voucher de voyage détecté</Text>
+          <Text style={styles.successTitle}>
+            {result?.alreadyCheckedIn ? "Déjà enregistré" : "Check-in réussi"}
+          </Text>
+          <Text style={styles.successSubtitle}>
+            {result?.message ??
+              (result?.alreadyCheckedIn
+                ? "Ce billet a déjà été scanné"
+                : "Billet validé par le serveur")}
+          </Text>
 
-          {scannedUrl && (
-            <View style={styles.urlBox}>
-              <Text style={styles.urlLabel}>URL du voucher</Text>
-              <Text style={styles.urlText} numberOfLines={2}>{scannedUrl}</Text>
+          {result?.reservation && (
+            <View style={styles.card}>
+              <Text style={styles.cardLabel}>Voyage</Text>
+              <Text style={styles.cardTitle}>{result.reservation.voyage.title}</Text>
+              {result.reservation.voyage.destination && (
+                <Text style={styles.cardMeta}>
+                  {result.reservation.voyage.destination.name}
+                  {", "}
+                  {result.reservation.voyage.destination.country}
+                </Text>
+              )}
+              {result.reservation.reference && (
+                <Text style={styles.cardToken}>
+                  Réf. {result.reservation.reference}
+                </Text>
+              )}
+              {result.checkIn?.checkedInAt && (
+                <Text style={styles.cardMeta}>
+                  Check-in :{" "}
+                  {new Date(result.checkIn.checkedInAt).toLocaleString("fr-FR")}
+                </Text>
+              )}
             </View>
           )}
 
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.primaryButton} onPress={handleOpenPdf}>
-              <Text style={styles.primaryButtonText}>📄 Ouvrir le PDF</Text>
-            </TouchableOpacity>
+            {result?.reservation?.id && (
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() =>
+                  router.replace(`/(app)/reservations/${result.reservation!.id}`)
+                }
+              >
+                <Text style={styles.primaryButtonText}>Voir ma réservation</Text>
+              </TouchableOpacity>
+            )}
+            {pdfUrl && (
+              <TouchableOpacity style={styles.secondaryButton} onPress={handleOpenPdf}>
+                <Text style={styles.secondaryButtonText}>📄 Télécharger le PDF</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.secondaryButton} onPress={resetScan}>
-              <Text style={styles.secondaryButtonText}>Scanner à nouveau</Text>
+              <Text style={styles.secondaryButtonText}>Scanner un autre billet</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -226,9 +360,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-  headerContent: {
-    flex: 1,
-  },
+  headerContent: { flex: 1 },
   title: {
     fontSize: 24,
     fontWeight: "800",
@@ -240,7 +372,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     lineHeight: 20,
   },
-  // Caméra
   cameraContainer: {
     width: "100%",
     height: CAMERA_HEIGHT,
@@ -315,11 +446,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
   },
-  // Hint
-  hint: {
-    padding: 20,
-    paddingTop: 16,
-  },
+  hint: { padding: 20, paddingTop: 16 },
   hintText: {
     fontSize: 13,
     color: Colors.textMuted,
@@ -331,7 +458,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  // États
   centered: {
     flex: 1,
     justifyContent: "center",
@@ -359,7 +485,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 24,
   },
-  // Succès
   successCircle: {
     width: 110,
     height: 110,
@@ -371,41 +496,64 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  errorCircle: {
+    borderColor: "#E57373",
+    backgroundColor: "rgba(229,115,115,0.1)",
+  },
   successIcon: { fontSize: 44 },
   successTitle: {
     fontSize: 24,
     fontWeight: "800",
     color: Colors.textPrimary,
     marginBottom: 6,
+    textAlign: "center",
   },
   successSubtitle: {
     fontSize: 14,
     color: Colors.textSecondary,
     marginBottom: 24,
+    textAlign: "center",
   },
-  urlBox: {
+  errorText: {
+    fontSize: 14,
+    color: "#E57373",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  card: {
     backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: Colors.border,
     width: "100%",
-    marginBottom: 28,
+    marginBottom: 24,
   },
-  urlLabel: {
+  cardLabel: {
     fontSize: 10,
     color: Colors.textMuted,
     fontWeight: "700",
     letterSpacing: 0.5,
     marginBottom: 6,
   },
-  urlText: {
-    fontSize: 11,
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  cardMeta: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  cardToken: {
+    fontSize: 12,
     color: Colors.gold,
     fontFamily: "monospace",
-    lineHeight: 18,
+    marginTop: 8,
   },
-  // Boutons
   actionButtons: {
     width: "100%",
     gap: 12,

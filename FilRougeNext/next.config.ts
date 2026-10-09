@@ -5,7 +5,7 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  allowedDevOrigins: ["192.168.6.129"],
+  allowedDevOrigins: ["192.168.6.155", "192.168.6.129", "192.168.6.169"],
   images: {
     remotePatterns: [
       {

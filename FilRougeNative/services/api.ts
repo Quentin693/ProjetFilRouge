@@ -38,14 +38,24 @@ async function request<T>(
 
   try {
     const res = await fetch(url, { ...options, headers });
-    const json = await res.json();
-
-    if (!res.ok) {
-      return { error: json.error ?? `Erreur ${res.status}` };
+    const text = await res.text();
+    let json: Record<string, unknown> = {};
+    try {
+      json = text ? JSON.parse(text) : {};
+    } catch {
+      return {
+        error: res.ok
+          ? "Réponse serveur invalide."
+          : `Erreur ${res.status} — route API introuvable ou serveur obsolète.`,
+      };
     }
 
-    return { data: json };
-  } catch (err) {
+    if (!res.ok) {
+      return { error: (json.error as string) ?? `Erreur ${res.status}` };
+    }
+
+    return { data: json as T };
+  } catch {
     return { error: "Impossible de joindre le serveur." };
   }
 }
@@ -141,6 +151,54 @@ export const reservationService = {
       method: "POST",
       body: JSON.stringify(body),
     });
+  },
+
+  /** Scan QR billet → validation backend + check-in métier */
+  async scanVoucher(body: {
+    reservationId: string;
+    token: string;
+    latitude?: number;
+    longitude?: number;
+  }): Promise<
+    ApiResponse<{
+      success?: boolean;
+      message?: string;
+      checkIn?: {
+        id: string;
+        checkedInAt: string;
+        location: string | null;
+      };
+      reservation?: Reservation & {
+        reference?: string;
+        voyage: Reservation["voyage"] & {
+          destination?: { name: string; country: string };
+        };
+      };
+      pdfUrl?: string;
+      alreadyCheckedIn?: boolean;
+    }>
+  > {
+    const authToken = await getToken();
+    try {
+      const res = await fetch(API_ROUTES.voucherScan, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+
+      // 201 = check-in OK ; 409 + alreadyCheckedIn = déjà scanné (on renvoie quand même les data)
+      if (res.ok || (res.status === 409 && json.alreadyCheckedIn)) {
+        return { data: json };
+      }
+
+      return { error: json.error ?? `Erreur ${res.status}` };
+    } catch {
+      return { error: "Impossible de joindre le serveur." };
+    }
   },
 };
 

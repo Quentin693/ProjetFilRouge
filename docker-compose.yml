@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: voyage_luxe
     ports:
-      - "5433:5432"  # 5432 occupé par un autre projet → accessible via localhost:5433
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -28,6 +28,9 @@ services:
     build:
       context: ./FilRougeNext
       dockerfile: Dockerfile
+      args:
+        # Figé dans le JS client au build (QR codes scannables depuis le téléphone)
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://192.168.6.155:3000}
     container_name: filrouge_nextjs
     restart: unless-stopped
     ports:
@@ -38,14 +41,14 @@ services:
 
       # NextAuth — remplace par une vraie clé en prod !
       AUTH_SECRET: ${AUTH_SECRET:-change-moi-en-production-minimum-32chars}
-      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_URL: ${AUTH_URL:-http://192.168.6.155:3000}
 
       # Unsplash (optionnel)
       NEXT_PUBLIC_UNSPLASH_ACCESS_KEY: ${NEXT_PUBLIC_UNSPLASH_ACCESS_KEY:-}
       UNSPLASH_SECRET_KEY: ${UNSPLASH_SECRET_KEY:-}
 
-      # URL publique de l'app (utile pour les QR codes)
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      # URL publique de l'app (QR codes + liens PDF)
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://192.168.6.155:3000}
     depends_on:
       postgres:
         condition: service_healthy

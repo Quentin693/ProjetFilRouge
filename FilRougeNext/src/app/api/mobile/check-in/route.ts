@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyMobileToken } from "@/lib/mobile-auth";
 import { prisma } from "@/lib/prisma";
 
-// POST /api/mobile/check-in — Enregistrer un check-in NFC
+// POST /api/mobile/check-in — Enregistrer un check-in (tag générique ; préférer /voucher/scan pour le QR)
 export async function POST(req: NextRequest) {
   const user = await verifyMobileToken(req);
   if (!user) {
@@ -39,14 +39,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Vérifier si un check-in avec ce tag NFC existe déjà pour cette réservation
+    // Vérifier si un check-in avec ce tag existe déjà pour cette réservation
     const existing = await prisma.checkIn.findFirst({
       where: { reservationId, nfcTagId },
     });
 
     if (existing) {
       return NextResponse.json(
-        { error: "Ce tag NFC a déjà été scanné pour cette réservation." },
+        { error: "Ce tag a déjà été scanné pour cette réservation." },
         { status: 409 }
       );
     }

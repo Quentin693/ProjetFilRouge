@@ -3,6 +3,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 interface PassengerInfo {
   firstName: string;
@@ -84,6 +85,9 @@ export async function createReservationAction(data: BookingData) {
 
   // Récupérer le slug du voyage pour la redirection
   const voyage = await prisma.voyage.findUnique({ where: { id: voyageId }, select: { slug: true } });
+  revalidatePath("/dashboard");
+  revalidatePath("/reservations");
+  revalidatePath(`/voyages/${voyage?.slug}`);
   redirect(`/voyages/${voyage?.slug}/confirmation?reservation=${reservation.id}`);
 }
 
@@ -115,6 +119,9 @@ export async function processPaymentAction(reservationId: string) {
     }),
   ]);
 
+  revalidatePath("/dashboard");
+  revalidatePath("/reservations");
+  revalidatePath(`/reservations/${reservationId}`);
   return { success: true, reservationId };
 }
 
@@ -160,5 +167,8 @@ export async function cancelReservationAction(reservationId: string) {
       : []),
   ]);
 
+  revalidatePath("/dashboard");
+  revalidatePath("/reservations");
+  revalidatePath(`/reservations/${reservationId}`);
   return { success: true };
 }

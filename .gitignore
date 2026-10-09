@@ -24,3 +24,8 @@ yarn-error.log*
 # IDE
 .vscode/
 .idea/
+
+# Aide-mémoire live coding (soutenance)
+**/AIDE_MEMOIRE_LIVE_CODING.md
+**/LIVE_CODING_NEXTJS.md
+**/LIVE_CODING*.md

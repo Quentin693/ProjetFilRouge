@@ -24,6 +24,9 @@ export const API_ROUTES = {
   reservation: (id: string) =>
     `${API_BASE_URL}/api/mobile/reservations/${id}`,
 
+  // Voucher QR (check-in billet)
+  voucherScan: `${API_BASE_URL}/api/mobile/voucher/scan`,
+
   // Admin
   adminOverview: `${API_BASE_URL}/api/mobile/admin/overview`,
   adminStats: `${API_BASE_URL}/api/mobile/admin/stats`,

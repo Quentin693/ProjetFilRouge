@@ -251,17 +251,17 @@ model Payment {
 }
 
 // ==============================
-// CHECK-IN NFC (Mobile)
+// CHECK-IN BILLET (Mobile — QR)
 // ==============================
 
 model CheckIn {
   id            String      @id @default(cuid())
   reservationId String
-  nfcTagId      String      // ID du tag NFC scanné
+  nfcTagId      String      // Identifiant du tag scanné (ex: QR:TOKEN)
   checkedInAt   DateTime    @default(now())
   latitude      Float?      // Position GPS au moment du check-in
   longitude     Float?
-  location      String?     // Adresse lisible (géocodage inverse)
+  location      String?     // Libellé / contexte du check-in
   createdAt     DateTime    @default(now())
 
   reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)

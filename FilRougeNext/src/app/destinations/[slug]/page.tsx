@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Star, Clock, Users, ArrowRight, MapPin, Check } from "lucide-react";
 import { MarketingNav } from "@/components/layout/marketing-nav";
 import { Footer } from "@/components/layout/footer";
-import { LUXURY_DESTINATIONS } from "@/lib/data/destinations";
 import { prisma } from "@/lib/prisma";
+import { destinationSlug } from "@/lib/destination-slug";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -14,48 +14,66 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
-  const dest = LUXURY_DESTINATIONS.find((d) => d.id === slug);
-  if (!dest) return { title: "Destination introuvable" };
+async function getDestinationBySlug(slug: string) {
+  const destinations = await prisma.destination.findMany({
+    where: { active: true },
+    include: {
+      voyages: {
+        where: { active: true },
+        include: {
+          destination: true,
+          departures: {
+            where: { active: true, departDate: { gte: new Date() } },
+            orderBy: { departDate: "asc" },
+            take: 1,
+          },
+        },
+        orderBy: { basePrice: "asc" },
+      },
+    },
+  });
 
-  return {
-    title: `${dest.name} — Voyages de luxe`,
-    description: dest.description,
-    openGraph: { title: dest.name, images: [dest.imageUrl] },
-  };
+  return (
+    destinations.find((d) => d.id === slug || destinationSlug(d.name) === slug) ?? null
+  );
 }
 
-async function getVoyagesForDestination(destinationName: string) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
   try {
-    const dest = await prisma.destination.findFirst({
-      where: { name: { contains: destinationName, mode: "insensitive" } },
-    });
-    if (!dest) return [];
+    const dest = await getDestinationBySlug(slug);
+    if (!dest) return { title: "Destination introuvable" };
 
-    return prisma.voyage.findMany({
-      where: { destinationId: dest.id, active: true },
-      include: {
-        destination: true,
-        departures: {
-          where: { active: true, departDate: { gte: new Date() } },
-          orderBy: { departDate: "asc" },
-          take: 1,
-        },
-      },
-    });
+    return {
+      title: `${dest.name} — Voyages de luxe`,
+      description: dest.description,
+      openGraph: { title: dest.name, images: [dest.imageUrl] },
+    };
   } catch {
-    return [];
+    return { title: "Destination introuvable" };
   }
 }
 
 export default async function DestinationDetailPage({ params }: Props) {
   const { slug } = await params;
-  const dest = LUXURY_DESTINATIONS.find((d) => d.id === slug);
+
+  let dest;
+  try {
+    dest = await getDestinationBySlug(slug);
+  } catch {
+    notFound();
+  }
 
   if (!dest) notFound();
 
-  const voyages = await getVoyagesForDestination(dest.name);
+  const voyages = dest.voyages;
+  const minPrice = voyages[0]?.basePrice;
+  const tagline = dest.highlights[0] ?? "";
+  const related = await prisma.destination.findMany({
+    where: { active: true, id: { not: dest.id } },
+    take: 3,
+    orderBy: { featured: "desc" },
+  });
 
   const categoryLabels: Record<string, string> = {
     LUXURY: "Luxe",
@@ -70,7 +88,6 @@ export default async function DestinationDetailPage({ params }: Props) {
     <div className="min-h-screen bg-[#0D0D0D]">
       <MarketingNav />
 
-      {/* Hero */}
       <div className="relative h-[80vh] min-h-[600px] overflow-hidden">
         <Image
           src={dest.imageUrl}
@@ -93,48 +110,52 @@ export default async function DestinationDetailPage({ params }: Props) {
             </div>
 
             <h1 className="font-serif text-5xl md:text-7xl text-white mb-3">{dest.name}</h1>
-            <p className="font-serif text-2xl text-[#C9A84C] mb-6">{dest.tagline}</p>
+            {tagline && (
+              <p className="font-serif text-2xl text-[#C9A84C] mb-6">{tagline}</p>
+            )}
 
             <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-1.5">
                 <Star className="w-4 h-4 text-[#C9A84C]" fill="#C9A84C" />
                 <span className="text-white font-semibold">{dest.rating}</span>
-                <span className="text-white/40 text-sm">({dest.reviewCount.toLocaleString()} avis)</span>
+                <span className="text-white/40 text-sm">
+                  ({dest.reviewCount.toLocaleString()} avis)
+                </span>
               </div>
               <div className="flex items-center gap-1.5 text-white/60">
                 <MapPin className="w-4 h-4 text-[#C9A84C]" />
                 {dest.country} · {dest.continent}
               </div>
-              <div className="ml-auto">
-                <p className="text-white/40 text-sm">À partir de</p>
-                <p className="font-serif text-3xl text-[#C9A84C] font-semibold">
-                  {dest.basePrice.toLocaleString("fr-FR")} €
-                  <span className="text-white/30 text-sm font-normal">/pers.</span>
-                </p>
-              </div>
+              {minPrice != null && (
+                <div className="ml-auto">
+                  <p className="text-white/40 text-sm">À partir de</p>
+                  <p className="font-serif text-3xl text-[#C9A84C] font-semibold">
+                    {minPrice.toLocaleString("fr-FR")} €
+                    <span className="text-white/30 text-sm font-normal">/pers.</span>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
       <div className="container mx-auto px-6 py-16">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-
-          {/* Main Content */}
           <div className="lg:col-span-2 space-y-12">
-            {/* Description */}
             <div>
               <h2 className="font-serif text-3xl text-white mb-5">À propos</h2>
               <p className="text-white/60 text-lg leading-relaxed">{dest.description}</p>
             </div>
 
-            {/* Highlights */}
             <div>
               <h2 className="font-serif text-3xl text-white mb-5">Points forts</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {dest.highlights.map((h, i) => (
-                  <div key={i} className="flex items-center gap-3 p-4 bg-[#111111] border border-white/5 rounded-xl">
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 p-4 bg-[#111111] border border-white/5 rounded-xl"
+                  >
                     <div className="w-8 h-8 rounded-full bg-[#C9A84C]/10 flex items-center justify-center shrink-0">
                       <Check className="w-4 h-4 text-[#C9A84C]" />
                     </div>
@@ -144,7 +165,6 @@ export default async function DestinationDetailPage({ params }: Props) {
               </div>
             </div>
 
-            {/* Voyages Available */}
             {voyages.length > 0 && (
               <div>
                 <h2 className="font-serif text-3xl text-white mb-6">
@@ -209,9 +229,7 @@ export default async function DestinationDetailPage({ params }: Props) {
             )}
           </div>
 
-          {/* Sidebar */}
           <div className="lg:col-span-1 space-y-5">
-            {/* Quick Info */}
             <div className="bg-[#111111] border border-white/5 rounded-2xl p-6 sticky top-24">
               <h3 className="font-serif text-xl text-white mb-5">Informations pratiques</h3>
 
@@ -224,10 +242,12 @@ export default async function DestinationDetailPage({ params }: Props) {
                   <span className="text-white/40 text-sm">Continent</span>
                   <span className="text-white text-sm">{dest.continent}</span>
                 </div>
-                <div className="flex justify-between items-center py-3 border-b border-white/5">
-                  <span className="text-white/40 text-sm">Durée recommandée</span>
-                  <span className="text-white text-sm">{dest.duration} jours</span>
-                </div>
+                {voyages[0] && (
+                  <div className="flex justify-between items-center py-3 border-b border-white/5">
+                    <span className="text-white/40 text-sm">Durée recommandée</span>
+                    <span className="text-white text-sm">{voyages[0].duration} jours</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center py-3 border-b border-white/5">
                   <span className="text-white/40 text-sm">Note voyageurs</span>
                   <div className="flex items-center gap-1">
@@ -235,12 +255,14 @@ export default async function DestinationDetailPage({ params }: Props) {
                     <span className="text-white text-sm font-semibold">{dest.rating}/5</span>
                   </div>
                 </div>
-                <div className="flex justify-between items-center py-3">
-                  <span className="text-white/40 text-sm">Prix de départ</span>
-                  <span className="text-[#C9A84C] font-serif font-semibold">
-                    {dest.basePrice.toLocaleString("fr-FR")} €
-                  </span>
-                </div>
+                {minPrice != null && (
+                  <div className="flex justify-between items-center py-3">
+                    <span className="text-white/40 text-sm">Prix de départ</span>
+                    <span className="text-[#C9A84C] font-serif font-semibold">
+                      {minPrice.toLocaleString("fr-FR")} €
+                    </span>
+                  </div>
+                )}
               </div>
 
               <Link href="/voyages" className="block mt-5">
@@ -254,34 +276,33 @@ export default async function DestinationDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Related Destinations */}
-      <div className="container mx-auto px-6 pb-20">
-        <h2 className="font-serif text-3xl text-white mb-8">Destinations similaires</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {LUXURY_DESTINATIONS.filter((d) => d.id !== dest.id)
-            .slice(0, 3)
-            .map((related) => (
+      {related.length > 0 && (
+        <div className="container mx-auto px-6 pb-20">
+          <h2 className="font-serif text-3xl text-white mb-8">Destinations similaires</h2>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {related.map((relatedDest) => (
               <Link
-                key={related.id}
-                href={`/destinations/${related.id}`}
+                key={relatedDest.id}
+                href={`/destinations/${destinationSlug(relatedDest.name)}`}
                 className="group relative rounded-xl overflow-hidden aspect-[4/3]"
               >
                 <Image
-                  src={related.imageUrl}
-                  alt={related.name}
+                  src={relatedDest.imageUrl}
+                  alt={relatedDest.name}
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-700"
                   sizes="33vw"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                 <div className="absolute bottom-3 left-3">
-                  <p className="font-serif text-white font-medium">{related.name}</p>
-                  <p className="text-white/50 text-xs">{related.country}</p>
+                  <p className="font-serif text-white font-medium">{relatedDest.name}</p>
+                  <p className="text-white/50 text-xs">{relatedDest.country}</p>
                 </div>
               </Link>
             ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <Footer />
     </div>
