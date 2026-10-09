@@ -1,0 +1,55 @@
+services:
+
+  # ─────────────────────────────────────────
+  # Base de données PostgreSQL
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: filrouge_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: voyage_luxe
+    ports:
+      - "5433:5432"  # 5432 occupé par un autre projet → accessible via localhost:5433
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d voyage_luxe"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # Application Next.js (front + back + API)
+  # ─────────────────────────────────────────
+  nextjs:
+    build:
+      context: ./FilRougeNext
+      dockerfile: Dockerfile
+    container_name: filrouge_nextjs
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Base de données (pointe vers le service postgres du compose)
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/voyage_luxe
+
+      # NextAuth — remplace par une vraie clé en prod !
+      AUTH_SECRET: ${AUTH_SECRET:-change-moi-en-production-minimum-32chars}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+
+      # Unsplash (optionnel)
+      NEXT_PUBLIC_UNSPLASH_ACCESS_KEY: ${NEXT_PUBLIC_UNSPLASH_ACCESS_KEY:-}
+      UNSPLASH_SECRET_KEY: ${UNSPLASH_SECRET_KEY:-}
+
+      # URL publique de l'app (utile pour les QR codes)
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
